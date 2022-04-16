@@ -13,6 +13,10 @@ struct kol::variant
     constexpr auto is_valid() const { return index != sizeof...(Ts); }
     template <class T>
     constexpr auto holds()    const { return tl::index_of<T, variant>::value == index; }
+    template <u64 I>
+    constexpr auto holds() const
+    requires tl::indexed<I, variant>::value
+    { return holds< typename tl::indexed<I, variant>::type >(); }
 
     template <class T, class Functor>
     constexpr auto on(Functor&& f) const -> variant const&
@@ -30,6 +34,14 @@ struct kol::variant
 
     template <class T> constexpr auto as()       -> T&       { return *reinterpret_cast<T*>(&data); }
     template <class T> constexpr auto as() const -> T const& { return *reinterpret_cast<T const*>(&data); }
+
+    template <u64 I> constexpr auto as() -> typename tl::indexed<I, variant>::type&
+    requires tl::indexed<I, variant>::value
+    { return *reinterpret_cast< typename tl::indexed<I, variant>::type* >(&data); }
+
+    template <u64 I> constexpr auto as() const -> typename tl::indexed<I, variant>::type const&
+    requires tl::indexed<I, variant>::value
+    { return *reinterpret_cast< typename tl::indexed<I, variant>::type const* >(&data); }
 
     constexpr variant() = default;
 

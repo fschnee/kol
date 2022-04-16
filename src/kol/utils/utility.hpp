@@ -44,6 +44,18 @@ namespace kol
         template <class, class> struct contains;
         template <class T, template <class...> class L, class... Ts>
         struct contains<T, L<Ts...>> : val< index_of<T, L<Ts...>>::value != sizeof...(Ts) > {};
+
+        struct not_found;
+
+        template <auto, class> struct indexed;
+        // Base cases.
+        template <template <class...> class L, class T, class... Ts>
+        struct indexed<0_u64, L<T, Ts...>> : val<true> { using type = T; };
+        template <u64 I, template <class...> class L>
+        struct indexed<I, L<>> : val<false> { using type = not_found; };
+        // Recursive case.
+        template <u64 I, template <class...> class L, class T, class... Ts>
+        struct indexed<I, L<T, Ts...>> : public indexed<I - 1, L<Ts...>> {};
     }
 
     constexpr auto starts_with(auto span, auto span2) -> bool

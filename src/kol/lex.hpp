@@ -84,7 +84,8 @@ namespace kol
     template <class Char>
     constexpr auto lex(
         std::span<Char> const code,
-        lang<Char> const& lang = default_lang<Char>()
+        lang<Char> const& lang, // Must stay as live as long as the lexing return.
+        bool debug = false
     ) -> variant< lexemes::encloser<Char>, lexing::failed >;
 }
 
@@ -113,7 +114,7 @@ constexpr auto kol::lexing::context<Char>::advance(u64 amount) -> u64
 }
 
 template <class Char>
-constexpr auto kol::lex(std::span<Char> const code, lang<Char> const& lang)
+constexpr auto kol::lex(std::span<Char> const code, lang<Char> const& lang, bool debug)
     -> variant< lexemes::encloser<Char>, lexing::failed >
 {
     auto ctx = lexing::context<Char>
@@ -125,7 +126,7 @@ constexpr auto kol::lex(std::span<Char> const code, lang<Char> const& lang)
         .index = 0,
         .line = 1,
         .column = 1,
-        .debug = true
+        .debug = debug
     };
 
     auto ret = variant< lexemes::encloser<Char>, lexing::failed >{};

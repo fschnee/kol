@@ -108,7 +108,7 @@ namespace kol
         auto kol = lang<Char>{};
 
         kol.enclosers.push_back({
-            .id = 0,
+            .id = 0_u64,
 
             .name  = "program",
             .begin = "file begin",
@@ -118,7 +118,7 @@ namespace kol
 
             .lex_inner = true,
         });
-        kol.default_encloser_id = 0;
+        kol.default_encloser_id = 0_u64;
 
         auto encloser_id = 1_u64;
 
@@ -209,7 +209,7 @@ namespace kol
         kol.enclosers.push_back({
             .id = encloser_id++,
 
-            .name  = "function call",
+            .name  = "brackets",
             .begin = "'('",
             .end   = "')'",
 
