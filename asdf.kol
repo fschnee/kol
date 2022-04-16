@@ -1,0 +1,11 @@
+// Some comment
+
+Some code // and some comment
+
+/* some comment
+spanning multiple linessss
+
+
+
+    */ and then some more code;
+print(+ -3 + "hallo \" World \"  is this working ?" + 3 + some variable    );
