@@ -172,15 +172,15 @@ constexpr auto kol::lexing::lex_enclosing(context<Char>& ctx)
     {
         using namespace std::literals;
 
+        if(span.size() == 0) return "\\0";
         if(starts_with(span, "\n"sv)) return "\\n";
         else if(starts_with(span, "\r"sv)) return "\\r";
 
         auto begin = span.data();
         auto len = 0_u64;
-        while(len != span.size() && !starts_with(span, "\n"sv) ) { ++len; span = span.subspan(1); };
+        while(span.size() && !starts_with_any(span, "\n"sv, "\r"sv) ) { ++len; span = span.subspan(1); };
 
-        if(len) return {begin, len-1};
-        else    return "\\0";
+        return {begin, len};
     };
 
     auto const push_encloser = [&](encloser&& e)

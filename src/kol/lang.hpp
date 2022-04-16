@@ -127,7 +127,7 @@ namespace kol
 
             .name  = "whitespace-eater",
             .begin = "['\\n', '\\t', '\\v', ' ', '\\r]",
-            .end   = "preempted",
+            .end   = "not begin",
 
             .is_begin   = [](auto code) { return starts_with_any(code, "\n"sv, "\t"sv, "\v"sv, " "sv, "\r"sv); },
             .begin_size = 1,
