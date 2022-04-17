@@ -5,12 +5,6 @@
 
 #include <cstddef> // For std::byte
 
-#include <iostream>
-#include <bitset>
-std::ostream& operator<< (std::ostream& os, std::byte b) {
-    return os << std::bitset<8>(std::to_integer<int>(b));
-}
-
 namespace kol { template <class...> struct variant; }
 
 // Can only handle variants with more than 1 type.
