@@ -2,20 +2,20 @@
 
 #include <string>
 
-#include "kol/lex_print.hpp"
-#include "kol/lexdata.hpp"
+#include "kol/lexing/ruleset.hpp"
+#include "kol/lexing/print.hpp"
 #include "kol/lex.hpp"
 
 namespace kol
 {
     struct lang
     {
-        lexing::data lex_rules;
+        lexing::ruleset lex_rules;
 
         constexpr auto load_code(std::string const& code, bool print_lex = false, bool debug_lex = false);
     };
 
-    inline auto make_lang() -> lang;
+    inline auto bootstrap_lang() -> lang;
 }
 
 // Implementations
@@ -26,9 +26,9 @@ constexpr auto kol::lang::load_code(std::string const& code, bool print_lex, boo
     if(print_lex && lexed.holds<0>()) kol::lexing::print( lexed.as<0>() );
 }
 
-inline auto kol::make_lang() -> lang
+inline auto kol::bootstrap_lang() -> lang
 {
-    auto ret = lang{.lex_rules = lexing::make_data()};
+    auto ret = lang{.lex_rules = lexing::default_ruleset()};
 
     return ret;
 }

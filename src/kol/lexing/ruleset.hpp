@@ -6,7 +6,7 @@
 
 namespace kol::lexing
 {
-    struct data
+    struct ruleset
     {
         using matcher = bool(*)(std::string_view const&);
 
@@ -67,25 +67,23 @@ namespace kol::lexing
 
         u64 default_encloser_id;
 
-        constexpr auto get_default_encloser() const -> encloser const*
+        constexpr auto get_encloser(u64 id) const -> encloser const*
         {
-            for(auto const& e : enclosers)
-                if(e.id == default_encloser_id)
-                    return &e;
+            for(auto const& e : enclosers) if(e.id == id) return &e;
             return nullptr;
         }
     };
 
-    inline auto make_data() -> data;
+    inline auto default_ruleset() -> ruleset;
 }
 
-inline auto kol::lexing::make_data() -> data
+inline auto kol::lexing::default_ruleset() -> ruleset
 {
     #define KOL_MATCHER(str) [](auto code){ return code.starts_with(str); }
 
-    auto kol = data{};
+    auto rules = ruleset{};
 
-    kol.enclosers.push_back({
+    rules.enclosers.push_back({
         .id = 0_u64,
 
         .name  = "program",
@@ -96,11 +94,11 @@ inline auto kol::lexing::make_data() -> data
 
         .lex_inner = true,
     });
-    kol.default_encloser_id = 0_u64;
+    rules.default_encloser_id = 0_u64;
 
     auto encloser_id = 1_u64;
 
-    kol.enclosers.push_back({
+    rules.enclosers.push_back({
         .id = encloser_id++,
 
         .name  = "whitespace-eater",
@@ -116,7 +114,7 @@ inline auto kol::lexing::make_data() -> data
         .lex_inner    = false,
     });
 
-    kol.enclosers.push_back({
+    rules.enclosers.push_back({
         .id = encloser_id++,
 
         .name  = "comment",
@@ -132,7 +130,7 @@ inline auto kol::lexing::make_data() -> data
         .lex_inner    = false,
     });
 
-    kol.enclosers.push_back({
+    rules.enclosers.push_back({
         .id = encloser_id++,
 
         .name  = "multiline comment",
@@ -148,7 +146,7 @@ inline auto kol::lexing::make_data() -> data
         .lex_inner    = false
     });
 
-    kol.enclosers.push_back({
+    rules.enclosers.push_back({
         .id = encloser_id++,
 
         .name  = "double-quote str",
@@ -166,7 +164,7 @@ inline auto kol::lexing::make_data() -> data
         .lex_inner = false
     });
 
-    kol.enclosers.push_back({
+    rules.enclosers.push_back({
         .id = encloser_id++,
 
         .name  = "single-quote str",
@@ -184,7 +182,7 @@ inline auto kol::lexing::make_data() -> data
         .lex_inner = false
     });
 
-    kol.enclosers.push_back({
+    rules.enclosers.push_back({
         .id = encloser_id++,
 
         .name  = "brackets",
@@ -199,7 +197,7 @@ inline auto kol::lexing::make_data() -> data
         .lex_inner = true
     });
 
-    kol.enclosers.push_back({
+    rules.enclosers.push_back({
         .id = encloser_id++,
 
         .name  = "block",
@@ -216,7 +214,7 @@ inline auto kol::lexing::make_data() -> data
 
     auto splitter_id = 0_u64;
 
-    kol.splitters.push_back({
+    rules.splitters.push_back({
         .id = splitter_id++,
         .name = "expression delimiter",
         .symbol = "';'",
@@ -224,7 +222,7 @@ inline auto kol::lexing::make_data() -> data
         .is_begin = KOL_MATCHER(';')
     });
 
-    kol.splitters.push_back({
+    rules.splitters.push_back({
         .id = splitter_id++,
         .name = "plus",
         .symbol = "'+'",
@@ -232,7 +230,7 @@ inline auto kol::lexing::make_data() -> data
         .is_begin = KOL_MATCHER('+')
     });
 
-    kol.splitters.push_back({
+    rules.splitters.push_back({
         .id = splitter_id++,
         .name = "minus",
         .symbol = "'-'",
@@ -242,5 +240,5 @@ inline auto kol::lexing::make_data() -> data
 
     #undef KOL_MATCHER
 
-    return kol;
+    return rules;
 }

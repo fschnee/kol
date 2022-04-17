@@ -3,13 +3,12 @@
 #include "kol/utils/strutils.hpp"
 #include "kol/utils/variant.hpp"
 #include "kol/utils/aliases.hpp"
-#include "kol/lexdata.hpp"
+#include "kol/lexing/ruleset.hpp"
 
 #include <string_view>
 #include <iostream> // Used when ctx.is_debug = true.
 #include <vector>
 #include <string>
-
 
 // Forward decls.
 namespace kol::lexemes
@@ -31,7 +30,7 @@ namespace kol
     {
         struct splitter
         {
-            lexing::data::splitter const* splitter;
+            lexing::ruleset::splitter const* splitter;
         };
 
         struct blob
@@ -44,7 +43,7 @@ namespace kol
             using sublexemes = std::vector<lexeme>;  // When <punct.lex_inner> = true.
             using subcode    = std::string;          // When <punct.lex_inner> = false.
 
-            lexing::data::encloser const* encloser;
+            lexing::ruleset::encloser const* encloser;
             variant<sublexemes, subcode> inner;
         };
     }
@@ -54,10 +53,10 @@ namespace kol
         struct context
         {
             std::string_view const code;
-            data const& target_lang;
+            ruleset const& rules;
 
             std::string_view remaining;
-            std::vector< data::encloser const* > enclosing_stack;
+            std::vector< decltype(ruleset::encloser::id) > enclosing_stack;
 
             u64 index;
             u64 line;
@@ -80,7 +79,7 @@ namespace kol
 
     inline auto lex(
         std::string_view code,
-        lexing::data& lex_rules,
+        lexing::ruleset& lex_rules,
         bool debug = false
     ) -> variant< lexemes::encloser, lexing::failed >;
 }
@@ -107,15 +106,15 @@ constexpr auto kol::lexing::context::advance(u64 amount) -> u64
     return advanced;
 }
 
-inline auto kol::lex(std::string_view code, lexing::data& lex_rules, bool debug)
+inline auto kol::lex(std::string_view code, lexing::ruleset& lex_rules, bool debug)
     -> variant< lexemes::encloser, lexing::failed >
 {
     auto ctx = lexing::context
     {
         .code = code,
-        .target_lang = lex_rules,
+        .rules = lex_rules,
         .remaining = code,
-        .enclosing_stack = { lex_rules.get_default_encloser() },
+        .enclosing_stack = { lex_rules.default_encloser_id },
         .index = 0,
         .line = 1,
         .column = 1,
@@ -133,7 +132,7 @@ inline auto kol::lex(std::string_view code, lexing::data& lex_rules, bool debug)
 constexpr auto kol::lexing::lex_enclosing(context& ctx)
     -> variant< lexemes::encloser, discarded, failed >
 {
-    auto const& me = *ctx.enclosing_stack.back();
+    auto const& me = *ctx.rules.get_encloser( ctx.enclosing_stack.back() );
 
     auto debug = [&](auto... args)
     {
@@ -182,17 +181,17 @@ constexpr auto kol::lexing::lex_enclosing(context& ctx)
 
     auto const consider_matches = !me.is_discarded && me.lex_inner;
 
-    data::splitter const* splitter_match = nullptr;
-    data::encloser const* encloser_match = nullptr;
+    ruleset::splitter const* splitter_match = nullptr;
+    ruleset::encloser const* encloser_match = nullptr;
     auto const try_match_splitter =  [&]
     {
-        for(auto& s : ctx.target_lang.splitters)
+        for(auto& s : ctx.rules.splitters)
             if(s.is_begin(ctx.remaining)) { splitter_match = &s; return true; }
         return false;
     };
     auto const try_match_encloser =  [&]
     {
-        for(auto& e : ctx.target_lang.enclosers)
+        for(auto& e : ctx.rules.enclosers)
             if(e.is_begin(ctx.remaining)) { encloser_match = &e; return true; }
         return false;
     };
@@ -233,7 +232,7 @@ constexpr auto kol::lexing::lex_enclosing(context& ctx)
         if(acc_len) push_blob_or_subcode({acc, acc_len});
         reset_acc = true;
 
-        ctx.enclosing_stack.push_back(encloser_match);
+        ctx.enclosing_stack.push_back(encloser_match->id);
         end_prematurely = ctx.advance(encloser_match->begin_size) != encloser_match->begin_size;
         lex_enclosing(ctx)
             .on< lexemes::encloser >([&](auto& e){ push_encloser(KOL_MOV(e)); })
