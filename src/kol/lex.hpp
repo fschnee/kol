@@ -1,65 +1,63 @@
 #pragma once
 
+#include "kol/utils/strutils.hpp"
 #include "kol/utils/variant.hpp"
 #include "kol/utils/aliases.hpp"
-#include "kol/lang.hpp"
+#include "kol/lexdata.hpp"
 
+#include <string_view>
 #include <iostream> // Used when ctx.is_debug = true.
 #include <vector>
-#include <span>
+#include <string>
+
 
 // Forward decls.
 namespace kol::lexemes
 {
-    template <class> struct splitter;
-    template <class> struct blob;
-    template <class> struct encloser;
+    struct splitter;
+    struct blob;
+    struct encloser;
 }
 
 namespace kol
 {
-    template <typename Char>
     using lexeme = variant<
-        lexemes::splitter<Char>,
-        lexemes::blob<Char>,
-        lexemes::encloser<Char>
+        lexemes::splitter,
+        lexemes::blob,
+        lexemes::encloser
     >;
 
     namespace lexemes
     {
-        template <class Char>
         struct splitter
         {
-            typename lang<Char>::splitter const* splitter;
+            lexing::data::splitter const* splitter;
         };
 
-        template <class Char>
         struct blob
         {
-            std::span<Char> code;
+            std::string code;
         };
 
-        template <class Char>
         struct encloser
         {
-            using sublexemes = std::vector<lexeme<Char>>;  // When <punct.lex_inner> = true.
-            using subcode    = std::span<Char>;            // When <punct.lex_inner> = false.
+            using sublexemes = std::vector<lexeme>;  // When <punct.lex_inner> = true.
+            using subcode    = std::string;          // When <punct.lex_inner> = false.
 
-            typename lang<Char>::encloser const* encloser;
+            lexing::data::encloser const* encloser;
             variant<sublexemes, subcode> inner;
         };
     }
 
     namespace lexing
     {
-        template <class Char>
         struct context
         {
-            std::span<Char> const code;
-            lang<Char> const& target_lang;
+            std::string_view const code;
+            data const& target_lang;
 
-            std::span<Char> remaining;
-            std::vector< typename lang<Char>::encloser const* > enclosing_stack;
+            std::string_view remaining;
+            std::vector< data::encloser const* > enclosing_stack;
 
             u64 index;
             u64 line;
@@ -77,27 +75,24 @@ namespace kol
         struct discarded {};
         struct failed {}; // TODO: implement
 
-        template <class Char>
-        constexpr auto lex_enclosing(context<Char>& ctx) -> variant< lexemes::encloser<Char>, discarded, failed >;
+        constexpr auto lex_enclosing(context& ctx) -> variant< lexemes::encloser, discarded, failed >;
     }
 
-    template <class Char>
-    constexpr auto lex(
-        std::span<Char> const code,
-        lang<Char> const& lang, // Must stay as live as long as the lexing return.
+    inline auto lex(
+        std::string_view code,
+        lexing::data& lex_rules,
         bool debug = false
-    ) -> variant< lexemes::encloser<Char>, lexing::failed >;
+    ) -> variant< lexemes::encloser, lexing::failed >;
 }
 
 // Implementations.
 
-template <class Char>
-constexpr auto kol::lexing::context<Char>::advance() -> bool
+constexpr auto kol::lexing::context::advance() -> bool
 {
     if(remaining.size() == 0) return false;
-    remaining = remaining.subspan(1);
+    remaining = remaining.substr(1);
 
-    auto newline = starts_with(remaining, std::string_view{"\n"});
+    auto newline = remaining.starts_with('\n');
     ++index;
     line  += newline;
     column = column * !newline + 1;
@@ -105,108 +100,90 @@ constexpr auto kol::lexing::context<Char>::advance() -> bool
     return true;
 }
 
-template <class Char>
-constexpr auto kol::lexing::context<Char>::advance(u64 amount) -> u64
+constexpr auto kol::lexing::context::advance(u64 amount) -> u64
 {
     auto advanced = 0_u64;
     while(amount) { --amount; if(!advance()) return advanced; ++advanced; }
     return advanced;
 }
 
-template <class Char>
-constexpr auto kol::lex(std::span<Char> const code, lang<Char> const& lang, bool debug)
-    -> variant< lexemes::encloser<Char>, lexing::failed >
+inline auto kol::lex(std::string_view code, lexing::data& lex_rules, bool debug)
+    -> variant< lexemes::encloser, lexing::failed >
 {
-    auto ctx = lexing::context<Char>
+    auto ctx = lexing::context
     {
         .code = code,
-        .target_lang = lang,
+        .target_lang = lex_rules,
         .remaining = code,
-        .enclosing_stack = { lang.get_default_encloser() },
+        .enclosing_stack = { lex_rules.get_default_encloser() },
         .index = 0,
         .line = 1,
         .column = 1,
         .debug = debug
     };
 
-    auto ret = variant< lexemes::encloser<Char>, lexing::failed >{};
+    auto ret = variant< lexemes::encloser, lexing::failed >{};
     lexing::lex_enclosing(ctx)
-        .template on< lexemes::encloser<Char> >([&](auto l){ ret = KOL_MOV(l); })
-        .template on< lexing::failed >([&](auto f){ ret = KOL_MOV(f); });
+        .on< lexemes::encloser >([&](auto l){ ret = KOL_MOV(l); })
+        .on< lexing::failed >([&](auto f){ ret = KOL_MOV(f); });
+
     return ret;
 }
 
-template <class Char>
-constexpr auto kol::lexing::lex_enclosing(context<Char>& ctx)
-    -> variant< lexemes::encloser<Char>, discarded, failed >
+constexpr auto kol::lexing::lex_enclosing(context& ctx)
+    -> variant< lexemes::encloser, discarded, failed >
 {
     auto const& me = *ctx.enclosing_stack.back();
-
-    // If custom_behaviour is specified we defer to it.
-    if(me.on_begin) return me.on_begin(ctx);
 
     auto debug = [&](auto... args)
     {
         if(!ctx.debug) return;
         auto const indentation = std::string((ctx.enclosing_stack.size() - 1) * 4, ' ');
-        std::cout << indentation << me.name.data() << ' ';
+        std::cout << indentation << me.name << ' ';
         (std::cout << ... << args) << std::flush;
     };
 
     KOL_DONT_FORGET( ctx.enclosing_stack.pop_back() );
 
-    using encloser   = lexemes::encloser<Char>;
-    using sublexemes = typename encloser::sublexemes;
-    using subcode    = typename encloser::subcode;
-    using splitter   = lexemes::splitter<Char>;
-    using blob       = lexemes::blob<Char>;
+    using sublexemes = lexemes::encloser::sublexemes;
+    using subcode    = lexemes::encloser::subcode;
 
-    auto ret = encloser{ &me };
-    if(me.lex_inner) ret.inner = sublexemes{};
-    else             ret.inner = subcode{};
+    auto ret = lexemes::encloser{ .encloser = &me };
+    if(!me.is_discarded && me.lex_inner) ret.inner = sublexemes{};
+    else if(!me.is_discarded)            ret.inner = subcode{};
 
     /* Stuff to automate boilerplate. */
 
-    // Returns a string_view of some span until the first '\n'.
-    auto const until_newline = [](auto span) -> std::string_view
+    auto const make_nicely_printable = [](auto code) -> std::string
     {
-        using namespace std::literals;
-
-        if(span.size() == 0) return "\\0";
-        if(starts_with(span, "\n"sv)) return "\\n";
-        else if(starts_with(span, "\r"sv)) return "\\r";
-
-        auto begin = span.data();
-        auto len = 0_u64;
-        while(span.size() && !starts_with_any(span, "\n"sv, "\r"sv) ) { ++len; span = span.subspan(1); };
-
-        return {begin, len};
+        if(code.size() == 0) return "\\0";
+        return strutils::replace_escape_sequences(code.substr(0, 60)).substr(0, 60);
     };
 
-    auto const push_encloser = [&](encloser&& e)
+    auto const push_encloser = [&](lexemes::encloser&& e)
     {
-        debug("+ pushing encloser <", e.encloser->name.data(), ">\n");
-        ret.inner.template as<sublexemes>().push_back( KOL_MOV(e) );
+        debug("+ pushing encloser <", e.encloser->name, ">\n");
+        ret.inner.as<sublexemes>().push_back( KOL_MOV(e) );
     };
     auto const push_splitter = [&](auto s)
     {
-        debug("+ pushing splitter <", s->name.data(), ">\n");
-        ret.inner.template as<sublexemes>().push_back( splitter{ s } );
+        debug("+ pushing splitter <", s->name, ">\n");
+        ret.inner.as<sublexemes>().push_back( lexemes::splitter{ s } );
     };
-    auto const push_blob_or_subcode = [&](auto data)
+    auto const push_blob_or_subcode = [&](std::string_view data)
     {
-        debug("+ pushing blob_or_subcode <", std::string_view{ data.begin(), data.end() }, ">\n");
+        if(ctx.debug) debug("+ pushing blob_or_subcode <", make_nicely_printable(data), ">\n");
         ret.inner
-            .template on<sublexemes>([&](auto& l){ l.push_back(blob{ data }); })
-            .template on<subcode>([&](auto& c){ c = data; });
+            .on<sublexemes>([&](auto& l){ l.push_back( lexemes::blob{ std::string{data} }); })
+            .on<subcode>([&](auto& c){ c = data; });
     };
 
     /* Stuff for checking for matches. */
 
     auto const consider_matches = !me.is_discarded && me.lex_inner;
 
-    typename lang<Char>::splitter const* splitter_match = nullptr;
-    typename lang<Char>::encloser const* encloser_match = nullptr;
+    data::splitter const* splitter_match = nullptr;
+    data::encloser const* encloser_match = nullptr;
     auto const try_match_splitter =  [&]
     {
         for(auto& s : ctx.target_lang.splitters)
@@ -222,8 +199,8 @@ constexpr auto kol::lexing::lex_enclosing(context<Char>& ctx)
 
     auto const sublexemes_size = [&]
     {
-        auto size = -1;
-        ret.inner.template on<sublexemes>([&](auto ls){ size = ls.size(); });
+        auto size = 0;
+        ret.inner.on<sublexemes>([&](auto& ls){ size = ls.size(); });
         return size;
     };
 
@@ -245,7 +222,7 @@ constexpr auto kol::lexing::lex_enclosing(context<Char>& ctx)
 
     auto do_splitter_match = [&]
     {
-        if(acc_len) push_blob_or_subcode(std::span<Char>{acc, acc_len});
+        if(acc_len) push_blob_or_subcode({acc, acc_len});
         reset_acc = true;
 
         push_splitter(splitter_match);
@@ -253,15 +230,15 @@ constexpr auto kol::lexing::lex_enclosing(context<Char>& ctx)
     };
     auto do_encloser_match = [&]
     {
-        if(acc_len) push_blob_or_subcode(std::span<Char>{acc, acc_len});
+        if(acc_len) push_blob_or_subcode({acc, acc_len});
         reset_acc = true;
 
         ctx.enclosing_stack.push_back(encloser_match);
         end_prematurely = ctx.advance(encloser_match->begin_size) != encloser_match->begin_size;
         lex_enclosing(ctx)
-            .template on< lexemes::encloser<Char> >([&](auto& e){ push_encloser(KOL_MOV(e)); })
-            .template on< discarded >([&](auto){ debug("- <", encloser_match->name.data(), "> discarded\n"); }) // no-op.
-            .template on< failed >([&](auto){ end_prematurely = true; });
+            .on< lexemes::encloser >([&](auto& e){ push_encloser(KOL_MOV(e)); })
+            .on< discarded >([&](auto&){ debug("- <", encloser_match->name, "> discarded\n"); }) // no-op.
+            .on< failed >([&](auto&){ end_prematurely = true; });
     };
 
     /* The actual lexing loop. */
@@ -277,7 +254,9 @@ constexpr auto kol::lexing::lex_enclosing(context<Char>& ctx)
             reset_acc = false;
         }
 
-        debug(sublexemes_size(), ": <", until_newline(ctx.remaining), ">\n");
+        // Avoid allocating strings if we don't need to (make_nicely_printable allocates).
+        if(ctx.debug)
+            debug(sublexemes_size(), ": <", make_nicely_printable(ctx.remaining), ">\n");
 
         if(consider_matches && try_match_splitter())
         { do_splitter_match(); }
@@ -295,7 +274,7 @@ constexpr auto kol::lexing::lex_enclosing(context<Char>& ctx)
 
         if(end_prematurely || ctx.advance(advance) != advance) break;
 
-        if(done && !me.is_discarded && acc_len) push_blob_or_subcode(std::span<Char>{acc, acc_len});
+        if(done && !me.is_discarded && acc_len) push_blob_or_subcode({acc, acc_len});
         else acc_len += advance;
     }
 

@@ -15,7 +15,7 @@ namespace kol
         auto operator=(dont_forget&&) -> dont_forget& = delete;
         auto operator=(const dont_forget&) -> dont_forget& = delete;
 
-        ~dont_forget() { on_exit(); }
+        constexpr ~dont_forget() { on_exit(); }
 
     private:
         Func on_exit;

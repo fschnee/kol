@@ -2,6 +2,8 @@
 
 #include "kol/utils/aliases.hpp"
 
+#include <string_view>
+
 namespace kol
 {
     template <class T> struct remove_ref      { using type = T; };
@@ -57,17 +59,4 @@ namespace kol
         template <u64 I, template <class...> class L, class T, class... Ts>
         struct indexed<I, L<T, Ts...>> : public indexed<I - 1, L<Ts...>> {};
     }
-
-    constexpr auto starts_with(auto span, auto span2) -> bool
-    {
-        if(span.size() < span2.size()) return false;
-
-        for(auto i = 0_u64; i < span2.size(); ++i)
-            if(span[i] != span2[i]) return false;
-
-        return true;
-    }
-
-    constexpr auto starts_with_any(auto span, auto... spans) -> bool
-    { return (starts_with(span, spans) || ...); }
 }

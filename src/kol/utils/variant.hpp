@@ -3,6 +3,14 @@
 
 #include "kol/utils/utility.hpp"
 
+#include <cstddef> // For std::byte
+
+#include <iostream>
+#include <bitset>
+std::ostream& operator<< (std::ostream& os, std::byte b) {
+    return os << std::bitset<8>(std::to_integer<int>(b));
+}
+
 namespace kol { template <class...> struct variant; }
 
 // Can only handle variants with more than 1 type.
@@ -32,74 +40,105 @@ struct kol::variant
         return *this;
     }
 
-    template <class T> constexpr auto as()       -> T&       { return *reinterpret_cast<T*>(&data); }
-    template <class T> constexpr auto as() const -> T const& { return *reinterpret_cast<T const*>(&data); }
+    constexpr auto invalidate()
+    {
+        destroy(*this);
+        index   = sizeof...(Ts);
+        copy    = [](auto&, auto&){};
+        move    = [](auto&, auto&&){};
+        destroy = [](auto&){};
+    }
 
-    template <u64 I> constexpr auto as() -> typename tl::indexed<I, variant>::type&
-    requires tl::indexed<I, variant>::value
-    { return *reinterpret_cast< typename tl::indexed<I, variant>::type* >(&data); }
+    template <class T> constexpr auto as() &      -> T&       { return *reinterpret_cast<T*>(&data); }
+    template <class T> constexpr auto as() const& -> T const& { return *reinterpret_cast<T const*>(&data); }
+    template <class T> constexpr auto as() &&     -> T&&      { return KOL_MOV(*reinterpret_cast<T*>(&data)); }
 
-    template <u64 I> constexpr auto as() const -> typename tl::indexed<I, variant>::type const&
+    template <u64 I>
+    constexpr auto as() & -> typename tl::indexed<I, variant>::type&
     requires tl::indexed<I, variant>::value
-    { return *reinterpret_cast< typename tl::indexed<I, variant>::type const* >(&data); }
+    { return as< typename tl::indexed<I, variant>::type >(); }
+
+    template <u64 I>
+    constexpr auto as() const& -> typename tl::indexed<I, variant>::type const&
+    requires tl::indexed<I, variant>::value
+    { return as< typename tl::indexed<I, variant>::type >(); }
+
+    template <u64 I>
+    constexpr auto as() && -> typename tl::indexed<I, variant>::type&&
+    requires tl::indexed<I, variant>::value
+    { return static_cast<typename tl::indexed<I, variant>::type&&>( as< typename tl::indexed<I, variant>::type >() ); }
 
     constexpr variant() = default;
 
     template <typename T>
     constexpr variant(T&& t)
     requires tl::contains<T, variant>::value
-    { *this = emplaced<T>(KOL_FWD(t)); }
-
-    template <class T>
-    static constexpr auto emplaced(auto&&... args) -> variant
-    requires tl::contains<T, variant>::value
     {
-        auto ret = variant{};
-
-        new (&ret.data) T(KOL_FWD(args)...);
-        ret.index   = tl::index_of<T, variant>::value;
-        ret.copy    = [](auto src, auto tgt) { new (&tgt.data) T(src.template as<T>()); };
-        ret.destroy = [](auto v)             { v.template as<T>().~T(); };
-
-        return ret;
+        new (&data) T(KOL_FWD(t));
+        index   = tl::index_of<T, variant>::value;
+        copy    = [](auto& src, auto& tgt) { new (&tgt.data) T(src.template as<T>()); };
+        move    = [](auto& tgt, auto&& src) { new (&tgt.data) T(KOL_MOV(src).template as<T>()); };
+        destroy = [](auto& v) { v.template as<T>().~T(); };
     }
 
     constexpr variant(const variant& other)     { *this = other; }
     constexpr variant(variant&& other) noexcept { *this = KOL_MOV(other); }
 
-    constexpr auto operator=(const variant& other) -> variant&
+    template <class T>
+    constexpr auto operator=(T&& t) -> variant&
+    requires tl::contains<T, variant>::value
     {
         destroy(*this);
 
+        new (&data) T(KOL_FWD(t));
+        index   = tl::index_of<T, variant>::value;
+        copy    = [](auto& src, auto& tgt) { new (&tgt.data) T(src.template as<T>()); };
+        move    = [](auto& tgt, auto&& src) { new (&tgt.data) T(KOL_MOV(src).template as<T>()); };
+        destroy = [](auto& v) { v.template as<T>().~T(); };
+
+        return *this;
+    }
+
+    constexpr auto operator=(const variant& other) -> variant&
+    {
+        destroy(*this);
+        other.copy(other, *this);
+
         index   = other.index;
         copy    = other.copy;
+        move    = other.move;
+
         destroy = other.destroy;
-        if(is_valid()) copy(other, *this);
 
         return *this;
     }
 
     constexpr auto operator=(variant&& other) noexcept -> variant&
     {
-        swap(index, other.index);
-        swap(data, other.data);
-        swap(copy, other.copy);
-        swap(destroy, other.destroy);
+        destroy(*this);
+        other.move(*this, KOL_MOV(other));
+
+        index = other.index;
+        copy  = other.copy;
+        move  = other.move;
+        destroy = other.destroy;
+        other.invalidate();
 
         return *this;
     }
 
-    ~variant() { destroy(*this); }
+    constexpr ~variant() { destroy(*this); }
 
 private:
     unsigned long long index = sizeof...(Ts);
 
-    using data_t = std::aligned_storage_t< max(sizeof(Ts)...), max(alignof(Ts)...) >;
-    data_t data;
+    alignas(Ts...) std::byte data[max(sizeof(Ts)...)];
 
     using copy_t    = void(*)(variant const&, variant&);
+    using move_t    = void(*)(variant&, variant&&);
     using destroy_t = void(*)(variant&);
 
-    copy_t copy       = [](auto, auto){};
-    destroy_t destroy = [](auto){};
+    copy_t copy       = [](auto&, auto&){};
+    move_t move       = [](auto&, auto&&){};
+    destroy_t destroy = [](auto&){};
 };
