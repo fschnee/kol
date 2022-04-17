@@ -58,5 +58,29 @@ namespace kol
         // Recursive case.
         template <u64 I, template <class...> class L, class T, class... Ts>
         struct indexed<I, L<T, Ts...>> : public indexed<I - 1, L<Ts...>> {};
+
+        template <class, class, class> struct drop;
+        // Base case.
+        template <class T, template <class...> class Remaining, class Acc>
+        struct drop<T, Remaining<>, Acc> { using type = Acc; };
+        // Recursive cases.
+        template <
+            class T,
+            template <class...> class Remaining, class T2, class... Ts,
+            template <class...> class Acc,
+            class... AccTs
+        >
+        struct drop< T, Remaining<T2, Ts...>, Acc<AccTs...> >
+            :  drop< T, Remaining<Ts...>, Acc<AccTs..., T2> >
+        {};
+        template <
+            class T,
+            template <class...> class Remaining, class... Ts,
+            template <class...> class Acc,
+            class... AccTs
+        >
+        struct drop< T, Remaining<T, Ts...>, Acc<AccTs...> >
+            :  drop< T, Remaining<Ts...>, Acc<AccTs...> >
+        {};
     }
 }

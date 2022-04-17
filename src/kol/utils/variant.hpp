@@ -62,6 +62,34 @@ struct kol::variant
     requires tl::indexed<I, variant>::value
     { return static_cast<typename tl::indexed<I, variant>::type&&>( as< typename tl::indexed<I, variant>::type >() ); }
 
+    template <class T>
+    constexpr auto drop() &&
+    {
+        using ret_t = typename tl::drop<T, variant, variant<>>::type;
+
+        auto ret = ret_t{};
+
+        (on<Ts>([&](auto& inner){
+            if constexpr(tl::contains<Ts, ret_t>::value) ret = KOL_MOV(inner);
+        }), ...);
+
+        return ret;
+    }
+
+    template <class T>
+    constexpr auto dropped() const&
+    {
+        using ret_t = typename tl::drop<T, variant, variant<>>::type;
+
+        auto ret = ret_t{};
+
+        (on<Ts>([&](auto& inner){
+            if constexpr(tl::contains<Ts, ret_t>::value) ret = inner;
+        }), ...);
+
+        return ret;
+    }
+
     constexpr variant() = default;
 
     template <typename T>

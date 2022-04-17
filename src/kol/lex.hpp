@@ -121,12 +121,7 @@ inline auto kol::lex(std::string_view code, lexing::ruleset& lex_rules, bool deb
         .debug = debug
     };
 
-    auto ret = variant< lexemes::encloser, lexing::failed >{};
-    lexing::lex_enclosing(ctx)
-        .on< lexemes::encloser >([&](auto l){ ret = KOL_MOV(l); })
-        .on< lexing::failed >([&](auto f){ ret = KOL_MOV(f); });
-
-    return ret;
+    return lexing::lex_enclosing(ctx).drop< lexing::discarded >();
 }
 
 constexpr auto kol::lexing::lex_enclosing(context& ctx)
