@@ -5,6 +5,11 @@ from dataclasses import dataclass
 from typing import List, Any
 
 @dataclass
+class StmtSeq:
+    first: Any
+    rest:  Any
+
+@dataclass
 class BinopNode:
     lhs: Any # ExprNode
     op: kollex.Glyph
@@ -38,10 +43,15 @@ def parse_expr2_rule(cst: kolcst.UnwindableMatch, branch: str):
 def parse_stmt_rule(cst: kolcst.UnwindableMatch, branch: str):
     if branch == 'expr-stmt': return parse(cst.expr)
 
+def parse_stmts_rule(cst: kolcst.UnwindableMatch, branch: str):
+    if   branch == 'single':   return parse(cst.stmt)
+    elif branch == 'multiple': return StmtSeq(parse(cst.stmt), parse(cst.stmts))
+
 parsemap = {
     "expr":  parse_expr_rule,
     "expr'": parse_expr2_rule,
     "stmt":  parse_stmt_rule,
+    "stmts": parse_stmts_rule,
 }
 
 def parse(cstnode: kolcst.UnwindableMatch):

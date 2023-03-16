@@ -1,12 +1,17 @@
 # This ast has operator precedence correct.
 
-import kol.operator as ops
+import kol.operators as ops
 import kol.ast as ast
 import kol.cst as cst
 
 from dataclasses import dataclass
 
 class ExprNode: pass
+
+@dataclass
+class Statements:
+    first: ExprNode
+    rest:  ExprNode
 
 @dataclass
 class BinopNode(ExprNode):
@@ -80,6 +85,7 @@ def parse(_ast):
     if   t is ast.UnopNode:     return UnopNode(     ops.find_operator(_ast.op.text, ops.prefix_operators)[0],   parse(_ast.expr) )
     elif t is ast.EncloserNode: return EncloserNode( ops.find_operator(_ast.op.text, ops.encloser_operators)[0], parse(_ast.expr) )
     elif t is ast.IdentNode:    return IdentNode( _ast.ident.text.strip() )
+    elif t is ast.StmtSeq:      return Statements( parse(_ast.first), parse(_ast.rest) )
 
 if __name__ == "__main__":
     from pprint import pprint

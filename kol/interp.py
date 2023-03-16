@@ -1,30 +1,42 @@
-from kol import ast2, operator as ops
+from kol import ast2, operators
+from dataclasses import dataclass
 
-def interp_binop(ast: ast2.BinopNode):
-    if   ast.op is ops.plus:  return interp(ast.lhs) + interp(ast.rhs) 
-    elif ast.op is ops.minus: return interp(ast.lhs) - interp(ast.rhs)
-    elif ast.op is ops.mul:   return interp(ast.lhs) * interp(ast.rhs)
-    elif ast.op is ops.div:   return interp(ast.lhs) / interp(ast.rhs)
+def interp_binop(ast: ast2.BinopNode, interp):
+    if ast.op.ast_action is not None: return ast.op.ast_action(ast, interp)
     else:
         print('[kol.interp.interp_binop] Uninplemented operator', ast.op)
         exit(1)
 
-def interp_unop(ast: ast2.UnopNode):
-    if ast.op is ops.neg: return -interp(ast.expr)
+def interp_unop(ast: ast2.UnopNode, interp):
+    if ast.op.ast_action is not None: return ast.op.ast_action(ast, interp)
     else:
         print('[kol.interp.interp_unop] Uninplemented operator', ast.op)
         exit(1)
 
-def interp(ast: ast2.ExprNode):
-    t = type(ast)
+@dataclass
+class Interpreter:
+    variables = {}
+    operators = operators
+    evalmap   = {
+        ast2.BinopNode: interp_binop,
+        ast2.UnopNode: interp_unop,
+        ast2.EncloserNode: lambda a, i: i.eval_ast(a.expr),
+        ast2.IdentNode:    lambda a, i: i.get_variable(a.ident),
+        ast2.Statements:   lambda a, i: [i.eval_ast(a.first), i.eval_ast(a.rest)][-1] # TODO: serialize statements to avoid recursion-caused stack-overflow.
+    }
 
-    if   t is ast2.BinopNode:    return interp_binop(ast)
-    elif t is ast2.UnopNode:     return interp_unop(ast)
-    elif t is ast2.EncloserNode: return interp(ast.expr) # TODO: check op. () vs {}.
-    elif t is ast2.IdentNode:    return 1 # TODO: placeholder.
+    def eval_ast(self, ast): return self.evalmap[type(ast)](ast, self)
+
+    def get_variable(self, name): return self.variables[name]
+    def set_variable(self, name, value): self.variables[name] = value; return value
 
 if __name__ == "__main__":
     from sys import argv
     from kol import ast, cst
 
-    with open(argv[1]) as f: print( interp( ast2.parse( ast.parse( cst.parse( f.read() )[0] ) ) ) )
+    i = Interpreter()
+    i.variables = {"1": 1, "2": 2, "3": 3, "4": 4, "6": 6}
+
+    with open(argv[1]) as f: ast = ast2.parse( ast.parse( cst.parse( f.read() )[0] ) )
+
+    print( i.eval_ast(ast) )

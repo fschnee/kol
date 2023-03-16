@@ -1,4 +1,4 @@
-import kol.operator as ops
+import kol.operators as ops
 import kol.defs  as defs
 import kol.lexer as lex
 
@@ -57,9 +57,10 @@ class Arm:
 
 # Enclosers are special since they are 2 (different) symbols.
 default_rules_str = """
-expr' === unop ==> unop expr:::expr' ||| ident ==> ident ||| """ + " ||| ".join([f"encloser-{o.name} ==> opener:::encloser-{o.name}-opener expr closer:::encloser-{o.name}-closer" for o in ops.encloser_operators if o.opening is o])+  """
+expr' === unop ==> unop expr:::expr' ||| ident ==> ident ||| """ + " ||| ".join([f"encloser-{o.name} ==> opener:::encloser-{o.name}-opener expr closer:::encloser-{o.name}-closer" for o in ops.encloser_operators if o.opening is o]) + """
 expr  === binop ==> lhs:::expr' binop rhs:::expr ||| simple-expr ==> expr:::expr'
 stmt  === expr-stmt ==> expr endstmt
+stmts === multiple ==> stmt stmts ||| single ==> stmt
 """
 
 extra_rules = []
@@ -170,7 +171,7 @@ def parse_impl(g: GeneratorWrapper, rules: List[Rule], r: Rule, depth=0, debug =
             arms = None
 
 
-def parse(text: str, rules: List[Rule] = default_rules, start_rule_name: str = 'stmt', debug = False):
+def parse(text: str, rules: List[Rule] = default_rules, start_rule_name: str = 'stmts', debug = False):
     g = GeneratorWrapper(lex.lex(text))
     return parse_impl(g, rules, [r for r in rules if r.name == start_rule_name][0], debug = debug), g
 
