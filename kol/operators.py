@@ -1,15 +1,15 @@
 from kol.operator import *
 
 # The operators themselves
-mul   = Operator('mul', '*',   lambda binopNode, interp: interp.eval_ast(binopNode.lhs) * interp.eval_ast(binopNode.rhs))
-div   = Operator('div', '/',   lambda b, i: i.eval_ast(b.lhs) / i.eval_ast(b.rhs))
-plus  = Operator('plus', '+',  lambda b, i: i.eval_ast(b.lhs) + i.eval_ast(b.rhs))
-minus = Operator('minus', '-', lambda b, i: i.eval_ast(b.lhs) - i.eval_ast(b.rhs))
-neg   = Operator('neg', '-',   lambda u, i: -i.eval_ast(u.expr), Category.Prefix)
-ass   = Operator('ass', '=',   lambda b, i: i.set_variable(b.lhs.ident, i.eval_ast(b.rhs))) # TODO: assure lhs is identNode.
+mul   = Operator('mul',   '*')
+div   = Operator('div',   '/')
+plus  = Operator('plus',  '+')
+minus = Operator('minus', '-')
+neg   = Operator('neg',   '-', Category.Prefix)
+ass   = Operator('ass',   '=') # TODO: assure lhs is identNode.
 
-lparen = Operator('lparen', '(', None, Category.Encloser)
-rparen = Operator('rparen', ')', None, Category.Encloser)
+lparen = Operator('lparen', '(', Category.Encloser)
+rparen = Operator('rparen', ')', Category.Encloser)
 lparen.opening, lparen.closing = lparen, rparen
 rparen.opening, rparen.closing = lparen, rparen
 

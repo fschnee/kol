@@ -13,8 +13,6 @@ class Operator:
     name: str
     symbol: str
 
-    ast_action: Callable[['ast2', 'interpreter'], 'KolValue'] = None
-
     category: Category = Category.Infix
     assoc: Associativity = Associativity.Left # TODO: assure operators of equal precedence have the same associativity.
 
