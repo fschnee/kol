@@ -15,7 +15,9 @@ class KolFloat:
 
 @dataclass
 class KolFn:
-    body: Callable
+    params: List[str] 
+    # if body is Callable, the params are passed as list to callable aswell.
+    body: Callable['interp', 'paramlist'] | List # List of statements.
 
 # Instructions.
 

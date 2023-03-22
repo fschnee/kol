@@ -3,7 +3,6 @@ import kol.defs  as defs
 import kol.lexer as lex
 
 from dataclasses import dataclass, field
-from itertools import chain
 from typing import List, Callable, Any
 
 @dataclass
@@ -12,7 +11,12 @@ class GeneratorWrapper:
     is_done: bool = False
 
     def next(self):
-        try: return next(self.gen)
+        try: 
+            if type(self.gen) is list:
+                ret = self.gen.pop(0)
+                if len(self.gen) == 1: self.gen = self.gen[0]
+                return ret 
+            else: return next(self.gen)
         except StopIteration as e:
             self.is_done = True
             return e
@@ -20,7 +24,8 @@ class GeneratorWrapper:
     def prepend(self, el): self.prepend_many([el])
     def prepend_many(self, els):
         self.is_done = False
-        self.gen = chain(els, self.gen)
+        if type(self.gen) is list: self.gen = els + self.gen
+        else: self.gen = els + [self.gen]
 
     def peek(self):
         n = self.next()
@@ -57,10 +62,16 @@ class Arm:
 
 # Enclosers are special since they are 2 (different) symbols.
 default_rules_str = """
-expr' === unop ==> unop expr:::expr' ||| ident ==> ident ||| """ + " ||| ".join([f"encloser-{o.name} ==> opener:::encloser-{o.name}-opener expr closer:::encloser-{o.name}-closer" for o in ops.encloser_operators if o.opening is o]) + """
+endstmts === multiple ==> endstmt endstmts ||| single ==> endstmt
+stmts === multiple ==> stmt endstmts stmts ||| last2 ==> stmt endstmt ||| last ==> stmt
+stmt  === block ==> { stmts } endstmt ||| empty-block ==> { } ||| expr-stmt ==> expr
+
+expr' === unop  ==> unop expr:::expr' ||| fncall-noargs ==> ident ( ) ||| fncall ==> ident ( fncallargs ) ||| anon-fncall ==> ( fncallargs ) ||| anon-fncall-noargs ==> ( ) ||| fndef ==> fndef ||| ident ==> ident
 expr  === binop ==> lhs:::expr' binop rhs:::expr ||| simple-expr ==> expr:::expr'
-stmt  === expr-stmt ==> expr endstmt
-stmts === multiple ==> stmt stmts ||| single ==> stmt
+
+fncallargs === multiple ==> first:::expr endstmt rest:::fncallargs ||| single ==> expr 
+
+fndef  === with-args ==> [ fncallargs ] { stmts } ||| without-args ==> [ ] { stmts } ||| minimal ==> { stmts }
 """
 
 extra_rules = []
@@ -102,20 +113,20 @@ def create_rules(lines: str, extra_rules: List[Rule] = []) -> List[Rule]:
                 # TODO: else error
     return rules
 
+def detector(g, r, unwind_name, fieldname, cond):
+    el = g.next()
+    if g.is_done: return
+
+    if cond(el):
+        match = UnwindableMatch(unwind_name)
+        setattr(match, fieldname, el)
+        match._fields.append(el)
+        match._unwind_order = [fieldname]
+        return match
+    else: g.prepend(el)
+
 def generic_single_detector(unwind_name, fieldname, cond):
-    def detector(g, r):
-        el = g.next()
-        if g.is_done: return
-
-        if cond(el):
-            match = UnwindableMatch(unwind_name)
-            setattr(match, fieldname, el)
-            match._fields.append(el)
-            match._unwind_order = [fieldname]
-            return match
-        else: g.prepend(el)
-
-    return detector
+    return lambda g, r: detector(g, r, unwind_name, fieldname, cond)
 
 extra_rules += [
     Rule('endstmt', None, generic_single_detector('endstmt', 'glyph', lambda o: o.text == defs.endstmt)),
@@ -128,25 +139,27 @@ for o in ops.encloser_operators:
     if o.opening is not o: continue
 
     extra_rules += [
-        Rule(f'encloser-{o.name}-opener', None, generic_single_detector('encloser', 'op', lambda _o: _o.text == o.opening.symbol)),
-        Rule(f'encloser-{o.name}-closer', None, generic_single_detector('encloser', 'op', lambda _o: _o.text == o.closing.symbol)),
+        Rule(f'encloser-{o.name}-opener', None, generic_single_detector('encloser', 'op', lambda _o, o=o: _o.text == o.opening.symbol)),
+        Rule(o.opening.symbol,            None, generic_single_detector('encloser', 'op', lambda _o, o=o: _o.text == o.opening.symbol)),
+        Rule(f'encloser-{o.name}-closer', None, generic_single_detector('encloser', 'op', lambda _o, o=o: _o.text == o.closing.symbol)),
+        Rule(o.closing.symbol,            None, generic_single_detector('encloser', 'op', lambda _o, o=o: _o.text == o.closing.symbol)),
     ]
 
 default_rules = create_rules(default_rules_str, extra_rules)
 
-def parse_impl(g: GeneratorWrapper, rules: List[Rule], r: Rule, depth=0, debug = False) -> UnwindableMatch | None:
+def parse_impl(g: GeneratorWrapper, rules: List[Rule], r: Rule, depth = 0, debug = False) -> UnwindableMatch | None:
     if g.is_done: return
 
     if r.detector is not None:
         match = r.detector(g, rules)
-        if debug: print(' ' * depth, r.name + '(detector)', match != None)
+        if debug: print(' ' * depth + r.name + '(detector)', match != None, g)
         return match
 
-    if debug: print(' ' * depth, r.name, [branch.name for branch in r.branches])
+    if debug: print(' ' * depth + r.name, [branch.name for branch in r.branches], g)
 
     # Otherwise, match using the branches.
     for branch in r.branches:
-        if debug: print(' ' * depth, r.name + ':' + branch.name + '(stepping in)', [a.name for a in branch.arms])
+        if debug: print(' ' * depth + r.name + ':' + branch.name + '(stepping in)', [a.name for a in branch.arms], g)
         arms = []
         success = True
 
@@ -158,7 +171,7 @@ def parse_impl(g: GeneratorWrapper, rules: List[Rule], r: Rule, depth=0, debug =
             else: arms.append((a.name, _a))
 
         if success:
-            if debug: print(' ' * depth, r.name + ':' + branch.name + '(success)')
+            if debug: print(' ' * depth + r.name + ':' + branch.name + '(success)', g)
             match = UnwindableMatch(r.name + ':' + branch.name)
             for a in arms:
                 setattr(match, a[0], a[1])
@@ -166,10 +179,9 @@ def parse_impl(g: GeneratorWrapper, rules: List[Rule], r: Rule, depth=0, debug =
             match._unwind_order = list(reversed([a[0] for a in arms]))
             return match
         else:
-            if debug: print(' ' * depth, r.name + ':' + branch.name + '(fail)')
+            if debug: print(' ' * depth + r.name + ':' + branch.name + '(fail)', g)
             for (_, a) in reversed(arms): a.unwind(g, rules)
             arms = None
-
 
 def parse(text: str, rules: List[Rule] = default_rules, start_rule_name: str = 'stmts', debug = False):
     g = GeneratorWrapper(lex.lex(text))

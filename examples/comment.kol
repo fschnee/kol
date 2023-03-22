@@ -1,0 +1,5 @@
+abc   cde def
+// teste comentario tem que ser ignorado
+nao ignorado  +// teste 2
+  asdf;//comen tario
+  teste=335a

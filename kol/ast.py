@@ -2,33 +2,51 @@ from kol import operators as ops
 from kol import lexer as kollex
 from kol import cst as kolcst
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Any
 
 @dataclass
 class StmtSeq:
     first: Any
-    rest:  Any
+    rest:  'StmtSeq' | Any
 
 @dataclass
 class BinopNode:
     lhs: Any # ExprNode
-    op: kollex.Glyph
+    op: kollex.Glyph # | Operator.Operator
     rhs: Any
 
 @dataclass
 class UnopNode:
-    op: kollex.Glyph
-    expr: Any # ExprNode
-
-@dataclass
-class EncloserNode:
-    op: kollex.Glyph
+    op: kollex.Glyph # | Operator.Operator
     expr: Any # ExprNode
 
 @dataclass
 class IdentNode:
-    ident: kollex.Text
+    ident: kollex.Text | str
+
+@dataclass
+class FnDef:
+    body: None | StmtSeq = None
+    params: List[str] = field(default_factory = lambda: [])
+
+@dataclass
+class FnCall: 
+    fn: str | FnDef
+    args: List[Any] = field(default_factory = lambda: [])
+
+def parse_stmts_rule(cst: kolcst.UnwindableMatch, branch: str):
+    if   branch == 'simple-last': return parse(cst.stmt)
+    elif branch == 'last':        return parse(cst.stmt)
+    elif branch == 'last2':       return parse(cst.stmt)
+    elif branch == 'empty':       return None
+    elif branch == 'multiple':    return StmtSeq(parse(cst.stmt), parse(cst.stmts))
+
+def parse_stmt_rule(cst: kolcst.UnwindableMatch, branch: str):
+    if   branch == 'block':       return FnCall(FnDef(parse(cst.fnblock)))
+    elif branch == 'empty-block': return FnCall(FnDef())
+    elif branch == 'expr-stmt':   return parse(cst.expr)
+    else: print('BRANCH NOT FOUND(kol.ast.parse_stmt_rule)', branch)
 
 def parse_expr_rule(cst: kolcst.UnwindableMatch, branch: str):
     if   branch == 'binop':       return BinopNode( parse(cst.lhs), cst.binop.op, parse(cst.rhs) )
@@ -37,23 +55,40 @@ def parse_expr_rule(cst: kolcst.UnwindableMatch, branch: str):
 
 def parse_expr2_rule(cst: kolcst.UnwindableMatch, branch: str):
     if   branch == 'unop':               return UnopNode(cst.unop.op, parse(cst.expr))
+    elif branch == 'fncall-noargs':      return FnCall(cst.ident.ident.text)
+    elif branch == 'fncall':             return FnCall(cst.ident.ident.text, parse(cst.fncallargs))
+    elif branch == 'anon-fncall':        return FnCall('__identity__', parse(cst.fncallargs))
+    elif branch == 'anon-fncall-noargs': return FnCall('__identity__')
+    elif branch == 'fndef':              return parse(cst.fndef)
     elif branch == 'ident':              return IdentNode(cst.ident.ident)
-    elif branch.startswith('encloser-'): return EncloserNode(cst.opener.op, parse(cst.expr))
     else: print('BRANCH NOT FOUND(kol.ast.parse_expr2_node)', branch)
 
-def parse_stmt_rule(cst: kolcst.UnwindableMatch, branch: str):
-    if branch == 'expr-stmt': return parse(cst.expr)
+def parse_fncallargs_rule(cst: kolcst.UnwindableMatch, branch: str):
+    if   branch == 'single':   return [parse(cst.expr)]
+    elif branch == 'multiple': return [parse(cst.first)] + parse(cst.rest) 
 
-def parse_stmts_rule(cst: kolcst.UnwindableMatch, branch: str):
-    if   branch == 'single':   return parse(cst.stmt)
-    elif branch == 'multiple': return StmtSeq(parse(cst.stmt), parse(cst.stmts))
+def parse_fndef_rule(cst: kolcst.UnwindableMatch, branch: str):
+    if   branch == 'with-args':    return FnDef(parse(cst.stmts), parse(cst.fncallargs))
+    elif branch == 'without-args': return FnDef(parse(cst.stmts))
+    elif branch == 'minimal':      return FnDef(parse(cst.stmts)) 
+    else: print('BRANCH NOT FOUND(kol.ast.parse_fndef_rule)', branch)
 
 parsemap = {
+    "stmts": parse_stmts_rule,
+    "stmt":  parse_stmt_rule,
+    
     "expr":  parse_expr_rule,
     "expr'": parse_expr2_rule,
-    "stmt":  parse_stmt_rule,
-    "stmts": parse_stmts_rule,
+    
+    "fncallargs": parse_fncallargs_rule,
+
+    "fndef": parse_fndef_rule,
 }
+
+def parse(cstnode: kolcst.UnwindableMatch, parsemap = parsemap):
+    rule, branch = cstnode._type.split(':')
+    try: return parsemap[ rule ](cstnode, branch)
+    except KeyError as e: print('KeyError', e)
 
 def shunting_yard_handle_same_precedence(op, stack, opstack):
     if op.assoc == ops.Associativity.Right: pass
@@ -96,26 +131,25 @@ def binop_shunting_yard(_ast: BinopNode):
     while len(stack):
         curr = stack.pop(0)
         if type(curr) is ops.Operator: curr = BinopNode(nodes.pop(-2), curr, nodes.pop())
-        nodes.append(curr)
+        nodes.append(curr) 
 
     return nodes[0] # The root node.
 
 def base_rewrite(_ast):
-    # Simplify some structures, sort out operator precedence
+    # Simplify some structures, sort out operator precedence.
     t = type(_ast)
 
     if   t is BinopNode:    return binop_shunting_yard(_ast)
     elif t is UnopNode:     return UnopNode(     ops.find_operator(_ast.op.text, ops.prefix_operators)[0],   base_rewrite(_ast.expr) )
-    elif t is EncloserNode: return EncloserNode( ops.find_operator(_ast.op.text, ops.encloser_operators)[0], base_rewrite(_ast.expr) )
     elif t is IdentNode:    return IdentNode( _ast.ident.text.strip() )
     elif t is StmtSeq:      return StmtSeq( base_rewrite(_ast.first), base_rewrite(_ast.rest) )
+    elif t is FnCall:       return FnCall(base_rewrite(_ast.fn)   if type(_ast.fn) is not str  else _ast.fn,   [base_rewrite(a) for a in _ast.args])
+    elif t is FnDef:        return FnDef( base_rewrite(_ast.body) if _ast.body     is not None else _ast.body, _ast.params)
+    else: print('Error(base_rewrite): Unrecognized ast', t)
 
-def parse(cstnode: kolcst.UnwindableMatch):
-    rule, branch = cstnode._type.split(':')
-    try: return parsemap[ rule ](cstnode, branch)
-    except KeyError as e: print('KeyError', e)
+rewrites = [base_rewrite]
 
-def parse_and_rewrite(cstnode: kolcst.UnwindableMatch, rewrites = [base_rewrite]):
+def parse_and_rewrite(cstnode: kolcst.UnwindableMatch, parsemap = parsemap, rewrites = rewrites):
     ast = parse(cstnode)
     for r in rewrites: ast = r(ast)
     return ast

@@ -6,14 +6,24 @@ div   = Operator('div',   '/')
 plus  = Operator('plus',  '+')
 minus = Operator('minus', '-')
 neg   = Operator('neg',   '-', Category.Prefix)
-ass   = Operator('ass',   '=') # TODO: assure lhs is identNode.
+ass   = Operator('ass',   '=')
 
 lparen = Operator('lparen', '(', Category.Encloser)
 rparen = Operator('rparen', ')', Category.Encloser)
 lparen.opening, lparen.closing = lparen, rparen
 rparen.opening, rparen.closing = lparen, rparen
 
-operators = [mul, div, plus, minus, neg, ass, lparen, rparen]
+fnbody  = Operator('fnbody',  '{', Category.Encloser)
+fnbodyc = Operator('fnbodyc', '}', Category.Encloser)
+fnbody.opening,  fnbody.closing  = fnbody, fnbodyc
+fnbodyc.opening, fnbodyc.closing = fnbody, fnbodyc
+
+fnargdef  = Operator('fnargdef',  '[', Category.Encloser)
+fnargdefc = Operator('fnargdefc', ']', Category.Encloser)
+fnargdef.opening,  fnargdef.closing  = fnargdef, fnargdefc
+fnargdefc.opening, fnargdefc.closing = fnargdef, fnargdefc
+
+operators = [mul, div, plus, minus, neg, ass, lparen, rparen, fnbody, fnbodyc, fnargdef, fnargdefc]
 def find_operator(symbol: str, ops = operators): return [o for o in ops if o.symbol == symbol]
 
 infix_operators    = [o for o in operators if o.category == Category.Infix]

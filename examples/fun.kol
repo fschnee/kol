@@ -1,0 +1,8 @@
+fn with no args = { 4 };
+
+fn with args = [a; b; c] { a + b + c };
+
+a = 1;
+n = 4;
+
+-a + -n * (3/2) + 4 - 6 + fn with no args() + fn with args(1; 2; 4);
