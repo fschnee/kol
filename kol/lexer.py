@@ -3,17 +3,17 @@ import kol.defs      as defs
 
 class Glyph:
     def __init__(self, text): self.text = text
-    def __repr__(self): return f"t{{{self.text}}}"
+    def __repr__(self): return self.text
 class Text:
     def __init__(self, text): self.text = text.strip()
-    def __repr__(self): return f"\"{self.text}\""
+    def __repr__(self): return f"t\"{self.text}\""
 
 def lex(text):
     text_stack = []
     for t in tok.tokenize(text):
         if t in defs.glyphs:
             if len(text_stack):
-                yield Text(" ".join(text_stack))
+                for _t in text_stack: yield Text(_t)
                 text_stack = []
             yield Glyph(t)
         else: text_stack.append(t)

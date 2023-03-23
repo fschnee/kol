@@ -16,6 +16,7 @@ class Interpreter:
     ## Runtime stuff.
     variable_scopes = [{}]
     on = {
+        tree.KolNil:    lambda _, _ast: _ast,
         tree.KolInt:    lambda _, _ast: _ast,
         tree.KolFloat:  lambda _, _ast: _ast,
         tree.KolFn:     lambda _, _ast: _ast,
@@ -35,12 +36,11 @@ class Interpreter:
 
     def assign(self, n: str, v): return self.eval_ast(tree.Assign(n, v)) # Shorthand.
     def handle_assign(self, _ast: tree.Assign):
+        tgt_scope = self.variable_scopes[-1]
         for scope in reversed(self.variable_scopes):
-            if _ast.name in scope:
-                scope[_ast.name] = _ast.value
-                return _ast.value
-        self.variable_scopes[-1][_ast.name] = _ast.value
-        return _ast.value
+            if _ast.name in scope: tgt_scope = scope; break
+        tgt_scope[_ast.name] = self.eval_ast(_ast.value)
+        return tgt_scope[_ast.name]
 
     def handle_fn_call(self, _ast: tree.KolFnCall):
         if   type(_ast.fn) is str:        fn = self.handle_lookup(tree.Lookup(_ast.fn))
@@ -82,11 +82,21 @@ if __name__ == "__main__":
         ast_parsemap = ast.parsemap,
         ast_convertmap = ast2interpast.convertmap
     )
-    i.assign('__identity__', tree.KolFn([],             lambda i, ps: ps[0] if len(ps) == 1 else ps))
+    i.assign('kol.internal.identity', tree.KolFn([], lambda i, ps: ps[0] if len(ps) == 1 else ps))
+    i.assign('kol.internal.if',       tree.KolFn([], lambda i, ps: i.eval_ast(tree.KolFnCall(ps[1], []) if ps[0].value == 1 else tree.KolNil())))
+    i.assign('kol.internal.ifelse',   tree.KolFn([], lambda i, ps: i.eval_ast(tree.KolFnCall(ps[1       if ps[0].value == 1 else 2], []))))
+
     i.assign('minus',        tree.KolFn(['lhs', 'rhs'], lambda i, _: tree.KolInt(i.lookup('lhs').value - i.lookup('rhs').value)))
     i.assign('plus',         tree.KolFn(['lhs', 'rhs'], lambda i, _: tree.KolInt(i.lookup('lhs').value + i.lookup('rhs').value)))
     i.assign('mul',          tree.KolFn(['lhs', 'rhs'], lambda i, _: tree.KolInt(i.lookup('lhs').value * i.lookup('rhs').value)))
     i.assign('div',          tree.KolFn(['lhs', 'rhs'], lambda i, _: tree.KolInt(int(i.lookup('lhs').value / i.lookup('rhs').value))))
+    i.assign('eq',           tree.KolFn(['lhs', 'rhs'], lambda i, _: tree.KolInt(1 if i.lookup('lhs').value == i.lookup('rhs').value else 0)))
+    i.assign('ne',           tree.KolFn(['lhs', 'rhs'], lambda i, _: tree.KolInt(1 if i.lookup('lhs').value != i.lookup('rhs').value else 0)))
+    i.assign('gt',           tree.KolFn(['lhs', 'rhs'], lambda i, _: tree.KolInt(1 if i.lookup('lhs').value >  i.lookup('rhs').value else 0)))
+    i.assign('gte',          tree.KolFn(['lhs', 'rhs'], lambda i, _: tree.KolInt(1 if i.lookup('lhs').value >= i.lookup('rhs').value else 0)))
+    i.assign('lt',           tree.KolFn(['lhs', 'rhs'], lambda i, _: tree.KolInt(1 if i.lookup('lhs').value <  i.lookup('rhs').value else 0)))
+    i.assign('lte',          tree.KolFn(['lhs', 'rhs'], lambda i, _: tree.KolInt(1 if i.lookup('lhs').value <= i.lookup('rhs').value else 0)))
+
     with open(argv[1]) as f: 
         ret, rem = i.eval_str( f.read() )
         print(ret)

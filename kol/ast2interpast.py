@@ -24,6 +24,9 @@ def convert_fndef(_ast, convertmap):
     b = _ast.body if _ast.body is not None else []
     b = convert(b) # May be StmtSeq or just a single statement, thats why we force in into a list below.
     return tree.KolFn([a.ident.text for a in _ast.params], b if type(b) is list else [b])
+def convert_if(_ast, convertmap):
+    if _ast.false is None: return tree.KolFnCall('kol.internal.if',     [convert(_ast.cond, convertmap), convert(_ast.true, convertmap)])
+    else:                  return tree.KolFnCall('kol.internal.ifelse', [convert(_ast.cond, convertmap), convert(_ast.true, convertmap), convert(_ast.false, convertmap)])
 
 convertmap = {
     ast.StmtSeq: convert_stmtseq,
@@ -32,6 +35,7 @@ convertmap = {
     ast.UnopNode: convert_unopnode,
     ast.FnCall: convert_fncall,
     ast.FnDef: convert_fndef,
+    ast.If: convert_if,
 }
 
 def convert(_ast, convertmap = convertmap): return convertmap[type(_ast)](_ast, convertmap)

@@ -6,6 +6,9 @@ from dataclasses import dataclass
 # Value types.
 
 @dataclass
+class KolNil: pass
+
+@dataclass
 class KolInt:
     value: int
 

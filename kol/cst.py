@@ -36,6 +36,7 @@ class GeneratorWrapper:
 class UnwindableMatch:
     _type: Any
     _unwind_order: List[str] = field(default_factory = lambda: [])
+    _fieldnames: List[str] = field(default_factory = lambda: [])
     _fields: List['UnwindableMatch'] = field(default_factory = lambda: [])
 
     def unwind(self, g: GeneratorWrapper, r: List['Rule']):
@@ -63,17 +64,33 @@ class Arm:
 # Enclosers are special since they are 2 (different) symbols.
 default_rules_str = """
 endstmts === multiple ==> endstmt endstmts ||| single ==> endstmt
-stmts === multiple ==> stmt endstmts stmts ||| last2 ==> stmt endstmt ||| last ==> stmt
-stmt  === block ==> { stmts } endstmt ||| empty-block ==> { } ||| expr-stmt ==> expr
 
-expr' === unop  ==> unop expr:::expr' ||| fncall-noargs ==> ident ( ) ||| fncall ==> ident ( fncallargs ) ||| anon-fncall ==> ( fncallargs ) ||| anon-fncall-noargs ==> ( ) ||| fndef ==> fndef ||| ident ==> ident
-expr  === binop ==> lhs:::expr' binop rhs:::expr ||| simple-expr ==> expr:::expr'
+stmt  === block    ==> { stmts } endstmt   ||| empty-block ==> { }     ||| expr-stmt ==> expr
+stmts === multiple ==> stmt endstmts stmts ||| last2 ==> stmt endstmts ||| last ==> stmt
 
-fncallargs === multiple ==> first:::expr endstmt rest:::fncallargs ||| single ==> expr 
+expr' === ifexpr ==> ifexpr ||| unop ==> unop expr:::expr' ||| fncall-noargs ==> ident ( ) ||| fncall ==> ident ( fncallargs ) ||| anon-fncall ==> ( fncallargs ) ||| anon-fncall-noargs ==> ( ) ||| fndef ==> fndef ||| ident ==> ident
+expr  === binop  ==> partial:::binopleftpartial rhs:::expr ||| simple-expr ==> expr:::expr'
 
-fndef  === with-args ==> [ fncallargs ] { stmts } ||| without-args ==> [ ] { stmts } ||| minimal ==> { stmts }
+ident === multiple ==> _ident ident ||| single ==> _ident
+
+binoprightpartial === partial  ==>             binop rhs:::expr
+binopleftpartial  === partial  ==> lhs:::expr' binop
+binopleftpartials === multiple ==> first:::binopleftpartial rest:::binopleftpartials ||| single ==> first:::binopleftpartial
+
+fncallargs === multiple  ==> first:::expr endstmt rest:::fncallargs ||| single ==> expr 
+fndef      === with-args ==> [ fncallargs ] { stmts }               ||| without-args ==> [ ] { stmts } ||| minimal ==> { stmts }
+
+ifexpr     === regular  ==> if arms:::ifarms end           ||| rpartial-named ==> if expr => varname:::ident ... arms:::ifrparms end ||| lpartial-named ==> if binopleftpartials => varname:::ident ... arms:::iflparms end ||| rpartial ==> if expr ... arms:::ifrparms end ||| lpartial ==> if binopleftpartials ... arms:::iflparms end
+iflparm    === ellipsis ==> ... => { stmts }               ||| expr     ==> ... expr => { stmts } ||| rpartial ==> ... binoprightpartial => { stmts } ||| lp-expr ==> expr => { stmts }
+ifrparm    === ellipsis ==> ... => { stmts }               ||| expr     ==> ... expr => { stmts } ||| rpartial ==>     binoprightpartial => { stmts }
+ifarm      === ellipsis ==> ... => { stmts }               ||| expr     ==>     expr => { stmts }
+ifarms     === multiple ==> arm:::ifarm   rest:::ifarms    ||| single   ==> arm:::ifarm
+iflparms   === multiple ==> arm:::iflparm rest:::iflparms  ||| single   ==> arm:::iflparm
+ifrparms   === multiple ==> arm:::ifrparm rest:::ifrparms  ||| single   ==> arm:::ifrparm
 """
 
+# Rules unexpressable using the above syntax.
+# Basically the most fundamental rules go here.
 extra_rules = []
 
 def rule_from_string(line: str) -> Rule:
@@ -120,6 +137,7 @@ def detector(g, r, unwind_name, fieldname, cond):
     if cond(el):
         match = UnwindableMatch(unwind_name)
         setattr(match, fieldname, el)
+        match._fieldnames.append(fieldname)
         match._fields.append(el)
         match._unwind_order = [fieldname]
         return match
@@ -132,7 +150,7 @@ extra_rules += [
     Rule('endstmt', None, generic_single_detector('endstmt', 'glyph', lambda o: o.text == defs.endstmt)),
     Rule('unop',    None, generic_single_detector('unop',    'op',    lambda o: o.text in [o.symbol for o in ops.prefix_operators])),
     Rule('binop',   None, generic_single_detector('binop',   'op',    lambda o: o.text in [o.symbol for o in ops.infix_operators])),
-    Rule('ident',   None, generic_single_detector('ident',   'ident', lambda i: type(i) is lex.Text)),
+    Rule('_ident',  None, generic_single_detector('ident',   'ident', lambda i: type(i) is lex.Text)),
 ]
 
 for o in ops.encloser_operators:
@@ -144,6 +162,13 @@ for o in ops.encloser_operators:
         Rule(f'encloser-{o.name}-closer', None, generic_single_detector('encloser', 'op', lambda _o, o=o: _o.text == o.closing.symbol)),
         Rule(o.closing.symbol,            None, generic_single_detector('encloser', 'op', lambda _o, o=o: _o.text == o.closing.symbol)),
     ]
+
+extra_rules += [
+    Rule('...', None, generic_single_detector('ellipsis',  'op',  lambda _o: _o.text == '...')),
+    Rule('=>',  None, generic_single_detector('fat-arrow', 'op',  lambda _o: _o.text == '=>')),
+    Rule('if',  None, generic_single_detector('if',        'if',  lambda _o: _o.text == 'if')),
+    Rule('end', None, generic_single_detector('end',       'end', lambda _o: _o.text == 'end')),
+]
 
 default_rules = create_rules(default_rules_str, extra_rules)
 
@@ -175,6 +200,7 @@ def parse_impl(g: GeneratorWrapper, rules: List[Rule], r: Rule, depth = 0, debug
             match = UnwindableMatch(r.name + ':' + branch.name)
             for a in arms:
                 setattr(match, a[0], a[1])
+                match._fieldnames.append(a[0])
                 match._fields.append(a[1])
             match._unwind_order = list(reversed([a[0] for a in arms]))
             return match

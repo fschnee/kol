@@ -1,0 +1,35 @@
+x = 2;
+
+// Regular without else:
+if x == 3 => { -1 } end;
+
+// Regular:
+if  x == 2 => { -1 } 
+    ...    => { x } // Else.
+end;
+
+// Regular with many arms:
+if  x != 2 => { x + 1 }
+    x >= 4 => { 4 }
+    ...    => { x }
+end;
+
+y = 3;
+
+/// Left Partial:
+if x * 2 == ...
+    2         => { 3 }
+    4         => { x + 1 }
+    ... > 4   => { 0 }  // Overriding the == with >.
+    ... y > 2 => { it } // Overriding the expression as a whole here. 'it' should refer to x * 2, similar to groovy;
+    ...       => { -1 }
+end;
+
+/// Right Partial:
+if x + 4 => expression result ... // We can also specify a name to be used instead of 'it', in this case 'expression result'.
+    == 2      => { 3 }
+    == 4      => { x + 1 }
+    > 8       => { 0 }
+    ... y > 3 => { expression result + 10 - x }
+    ...       => { -1 }
+end;
